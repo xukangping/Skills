@@ -1,0 +1,89 @@
+{
+  "skill_name": "ascendc-reduction-design",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "我需要设计一个 reduce_mean 算子，输入 shape=[1024, 4096]，沿 axis=1 归约，输出 shape=[1024]，数据类型 float16。请帮我设计完整的 Tiling 方案，包括多核切分和 UB 切分策略，并给出关键 Tiling 参数的计算公式。",
+      "expected_output": "应识别为 AR 模式，推荐 S1A（R=4096 全载 UB），给出 blockFactor/useCoreNum 计算，推荐 DAG 声明式实现，提醒 FP16→FP32 精度提升和双缓冲优化",
+      "files": [],
+      "assertions": [
+        {
+          "text": "正确识别归约模式为 AR（Axis-Reduction 最内维归约）",
+          "type": "pattern_recognition"
+        },
+        {
+          "text": "给出 blockFactor = CeilDiv(A, coreNum) 或等价的多核切分公式",
+          "type": "tiling_formula"
+        },
+        {
+          "text": "提到 FP16 需要升精度到 FP32 进行归约计算",
+          "type": "precision_promotion"
+        },
+        {
+          "text": "提到双缓冲优化（MemLevel::LEVEL_2 或 BUFFER_NUM=2）",
+          "type": "double_buffer"
+        },
+        {
+          "text": "给出 UB 切分策略（R 全载 S1A 或 CutR 分片 S1B 的判断）",
+          "type": "ub_split"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "正在实现一个 reduce_var 算子，输入 shape=[B, T, H]=[32, 512, 768]，沿 axis=1（T 轴）归约，输出均值和方差，shape=[32, 768]。这是 ARA 模式。请帮我选择算法（TwoPass vs Welford vs Group Reduce），并给出 Tiling 参数设计和核心 Kernel 骨架代码。",
+      "expected_output": "应识别为 ARA 模式，分析 R=512 是否可装入 UB，给出 TwoPass 与 Welford 的选择判断逻辑，给出 iterAddr_[] 地址计算模式，提到 V-S 同步传递 rstd",
+      "files": [],
+      "assertions": [
+        {
+          "text": "确认 ARA 模式（A=B×H=32×768, R=T=512）或等价分析",
+          "type": "pattern_recognition"
+        },
+        {
+          "text": "分析 R=512 是否能装入 UB，并给出 TwoPass vs Welford 的选择依据",
+          "type": "algorithm_selection"
+        },
+        {
+          "text": "给出 iterAddr_[] 多维地址计算或等价的非连续内存访问方案",
+          "type": "nddma_or_iteraddr"
+        },
+        {
+          "text": "提到 varScale / varFactor（方差缩放因子）参数",
+          "type": "var_scale"
+        },
+        {
+          "text": "给出 Kernel 骨架或伪代码（包含 CopyIn/Compute/CopyOut 三段结构）",
+          "type": "kernel_skeleton"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "我在实现 RmsNorm 算子（对最后一维归约），numRow=4096，numCol=8192，数据类型 float16。UB 大小约 192KB。请设计 UB 切分策略，判断应用哪种模式（MergeN/Normal/SingleRow/SplitD），并给出 buffer 预算计算过程和 V-S 同步的完整代码框架。",
+      "expected_output": "numCol=8192 > UB可容纳量，应走 SplitD 模式；给出两遍扫描（Former: 累积 partial sum → Latter: x×rstd×gamma）；给出 V-S 同步的 SetFlag/WaitFlag 代码模板",
+      "files": [],
+      "assertions": [
+        {
+          "text": "正确判断应走 SplitD 模式（numCol=8192 超出 UB 可容纳整行的阈值）",
+          "type": "mode_selection"
+        },
+        {
+          "text": "给出 buffer 预算计算（queBufSize + tmpBufSize 公式或类似计算）",
+          "type": "buffer_budget"
+        },
+        {
+          "text": "描述两遍扫描（Pass1 累积 partial sum，Pass2 应用 rstd×gamma）",
+          "type": "two_pass_scan"
+        },
+        {
+          "text": "包含 V-S 同步代码（SetFlag<V_S>/WaitFlag<V_S> 或等价表述）",
+          "type": "vs_sync"
+        },
+        {
+          "text": "提到多核按行切分（blockFactor = CeilDiv(numRow, coreNum)）",
+          "type": "multi_core_split"
+        }
+      ]
+    }
+  ]
+}
